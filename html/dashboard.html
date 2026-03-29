@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CCTV Anomaly Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <style>
+    :root {
+      --bg: #f8f9fa;
+      --card: #ffffff;
+      --text: #343a40;
+      --ok: #d4edda;
+      --ok-border: #28a745;
+      --anom: #f8d7da;
+      --anom-border: #dc3545;
+      --warn: #fff3cd;
+      --warn-border: #ffc107;
+      --gray: #6c757d;
+      --light: #f1f3f5;
+      --radius: 8px;
+      --gap: 12px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #212529;
+        --card: #2c3034;
+        --text: #f8f9fa;
+        --ok: #1e3a2b;
+        --anom: #3a1e22;
+        --warn: #3a2e1e;
+        --light: #343a40;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 12px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .container { max-width: 1400px; margin: 0 auto; }
+
+    h1 { font-size: 1.5rem; margin: 0 0 16px; text-align: center; }
+    h2 { font-size: 1.2rem; margin: 24px 0 12px; }
+
+    /* === CAMERA GRID === */
+    #cams {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: var(--gap);
+      margin-bottom: 24px;
+    }
+
+    .cam {
+      background: var(--card);
+      border: 1px solid #ddd;
+      border-left: 6px solid;
+      padding: 12px;
+      border-radius: var(--radius);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      transition: transform .2s, opacity .2s;
+      font-size: .9rem;
+    }
+
+    .cam.ok          { border-left-color: var(--ok-border); background: var(--ok); }
+    .cam.anomaly     { border-left-color: var(--anom-border); background: var(--anom); animation: pulse 1.8s infinite; }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.75} }
+
+    .cam h3 { margin:0 0 6px; font-size:1.1em; }
+    .status { font-size:.85em; color:var(--gray); margin:4px 0; }
+    .online { color:#28a745; font-weight:bold; }
+
+    .vehicle {
+      font-size:.8em; margin:3px 0; padding:3px 6px;
+      background:var(--light); border-radius:4px;
+      display:inline-block; white-space:nowrap;
+    }
+    .vehicle.anom { background:#ffebee; color:#c62828; font-weight:bold; }
+
+    .vehicle-list {
+      max-height:100px; overflow-y:auto; margin-top:6px;
+      display:flex; flex-wrap:wrap; gap:4px;
+    }
+
+    /* === ALARMS === */
+    #alarms {
+      max-height:500px; overflow-y:auto; border:1px solid #ddd;
+      padding:12px; background:var(--card); border-radius:var(--radius);
+      font-size:.9em;
+    }
+    .alarm {
+      background:var(--warn); border-left:5px solid var(--warn-border);
+      padding:8px; margin:6px 0; border-radius:4px; line-height:1.4;
+    }
+
+    .debug {
+      background:#e9ecef; color:#495057; padding:10px; margin:12px 0;
+      border-radius:6px; font-family:'Courier New',monospace;
+      font-size:.85em; border-left:4px solid #007bff; word-break:break-word;
+    }
+
+    .no-data { color:var(--gray); font-style:italic; text-align:center; padding:16px; }
+
+    /* RESPONSIVE */
+    @media (max-width:480px){
+      body{padding:8px} h1{font-size:1.3rem} h2{font-size:1.1rem}
+      #cams{grid-template-columns:1fr;gap:10px}
+      .cam{padding:10px;font-size:.85rem}
+      .vehicle{font-size:.75em;padding:2px 5px}
+      .debug{font-size:.8em;padding:8px}
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>CCTV Anomaly Monitor</h1>
+
+  <div id="debug" class="debug">Initializing Firebase…</div>
+
+  <div id="cams"></div>
+
+  <h2>Alarms (Latest 30) <button id="clearAlarms" style="float:right;font-size:.8em;">Clear</button></h2>
+  <div id="alarms"></div>
+</div>
+
+<script>
+  // ==============================================
+  // YOUR FIREBASE CONFIG
+  // ==============================================
+  const firebaseConfig = {
+    apiKey: "AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    authDomain: "cctv-monitor-f3e56.firebaseapp.com",
+    databaseURL: "https://cctv-monitor-f3e56-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "cctv-monitor-f3e56",
+    storageBucket: "cctv-monitor-f3e56.appspot.com",
+    messagingSenderId: "123456789012",
+    appId: "1:123456789012:web:abcdef1234567890abcdef"
+  };
+
+  try {
+    firebase.initializeApp(firebaseConfig);
+    document.getElementById('debug').textContent = 'Firebase connected – listening…';
+  } catch (e) {
+    document.getElementById('debug').innerHTML = `<span style="color:red;">Init error: ${e.message}</span>`;
+    console.error(e);
+  }
+
+  const db = firebase.database();
+
+  // -------------------------------------------------
+  // Helper: pretty timestamp
+  // -------------------------------------------------
+  const formatTS = iso => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d) ? iso :
+      d.toLocaleString('en-US', {
+        year:'numeric', month:'short', day:'2-digit',
+        hour:'2-digit', minute:'2-digit', second:'2-digit',
+        timeZone:'UTC'
+      }) + ' UTC';
+  };
+
+  // -------------------------------------------------
+  // CAMERAS
+  // -------------------------------------------------
+  const camsDiv = document.getElementById('cams');
+  const debugDiv = document.getElementById('debug');
+
+  db.ref('cameras').on('value', snap => {
+    const data = snap.val() || {};
+    camsDiv.innerHTML = '';
+
+    if (Object.keys(data).length === 0) {
+      camsDiv.innerHTML = '<div class="cam offline"><b>No cameras online</b></div>';
+      debugDiv.textContent = 'No data under /cameras – is the Python script running?';
+      return;
+    }
+
+    debugDiv.textContent = `Found ${Object.keys(data).length} camera(s). Updated ${new Date().toLocaleTimeString()}`;
+
+    Object.entries(data)
+      .sort(([a],[b])=>a.localeCompare(b))
+      .forEach(([id, cam]) => {
+        const st = cam.status || {};
+        const vehicles = cam.vehicles || {};               // only anomalous vehicles
+        const hasAnomaly = st.anomaly === true;
+
+        const div = document.createElement('div');
+        div.className = `cam ${hasAnomaly ? 'anomaly' : 'ok'}`;
+
+        const ts   = formatTS(st.timestamp);
+        const frame = st.last_frame ?? '-';
+        const totalVeh = st.total_vehicles ?? 0;
+        const totalAnom = st.total_anomalies ?? Object.keys(vehicles).length;
+
+        let vehHtml = '';
+        if (Object.keys(vehicles).length) {
+          Object.entries(vehicles).forEach(([vid, v]) => {
+            const reason = v.reason ? ` (${v.reason})` : '';
+            vehHtml += `<div class="vehicle anom">ID:${vid}${reason}</div>`;
+          });
+        } else {
+          vehHtml = '<div class="vehicle" style="color:var(--gray);font-style:italic;">No anomalies</div>';
+        }
+
+        div.innerHTML = `
+          <h3>${id}</h3>
+          <div class="status">
+            Frame: <b>${frame}</b> |
+            Vehicles: <b>${totalVeh}</b> |
+            Anomalies: <b>${totalAnom}</b> |
+            <span class="online">ONLINE</span>
+          </div>
+          <div style="margin:6px 0;font-weight:bold;color:${hasAnomaly?'#dc3545':'#28a745'}">
+            ${hasAnomaly ? 'ANOMALY!' : 'All Clear'}
+          </div>
+          <small style="color:var(--gray);">${ts}</small>
+          <div class="vehicle-list">${vehHtml}</div>
+        `;
+        camsDiv.appendChild(div);
+      });
+  }, err => {
+    console.error(err);
+    debugDiv.innerHTML = `<span style="color:red;">Error: ${err.message}</span>`;
+  });
+
+  // -------------------------------------------------
+  // ALARMS
+  // -------------------------------------------------
+  const alarmsDiv = document.getElementById('alarms');
+
+  const renderAlarms = snap => {
+    const data = snap.val() || {};
+    const entries = Object.entries(data)
+      .map(([k,v])=>({key:k, ...v}))
+      .sort((a,b)=>(b.timestamp||'').localeCompare(a.timestamp||''))
+      .slice(0,30);
+
+    alarmsDiv.innerHTML = '';
+
+    if (!entries.length) {
+      alarmsDiv.innerHTML = '<div class="no-data">No alarms yet.</div>';
+      return;
+    }
+
+    entries.forEach(a => {
+      const el = document.createElement('div');
+      el.className = 'alarm';
+      const t = formatTS(a.timestamp);
+      const reason = a.reason ? ` — <i>${a.reason}</i>` : '';
+      const veh = a.vehicle_id ? ` (ID: ${a.vehicle_id})` : '';
+      el.innerHTML = `
+        <strong>${a.camera||'Unknown'}</strong>${veh}${reason}
+        <small style="float:right;color:var(--gray);">${t}</small>
+      `;
+      alarmsDiv.appendChild(el);
+    });
+  };
+
+  const alarmsRef = db.ref('alarms').limitToLast(30);
+  alarmsRef.on('value', renderAlarms);
+
+  // Clear button
+  document.getElementById('clearAlarms').onclick = () => {
+    if (confirm('Delete the last 30 alarms?')) {
+      alarmsRef.once('value').then(snap => {
+        const updates = {};
+        snap.forEach(child => updates[child.key] = null);
+        db.ref('alarms').update(updates);
+      });
+    }
+  };
+</script>
+
+</body>
+</html>

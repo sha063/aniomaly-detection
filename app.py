@@ -11,9 +11,9 @@ from ultralytics import YOLO
 import firebase_admin
 from firebase_admin import credentials, db
 
-VIDEO_PATH = "E:/system/google drive/shihabaaqil22242224@gmail.com/My Drive/PR (E )/source/study/asemester/FYP-19-22/Supun-Rashee E18 Project/Codes/Videos Src/videos/sdf.mp4"
+VIDEO_PATH = "videos/sdf.mp4"
 CAMERA_ID = os.getenv("CAMERA_ID", "CAM01")
-FIREBASE_CRED = "E:/system/google drive/shihabaaqil22242224@gmail.com/My Drive/PR (E )/source/study/asemester/FYP-19-22/Supun-Rashee E18 Project/Codes/Videos Src/html/cctv-monitor-f3e56-firebase-adminsdk-fbsvc-e6ae0d1f7e.json"
+FIREBASE_CRED = "html/cctv-monitor-f3e56-firebase-adminsdk-fbsvc-e6ae0d1f7e.json"
 DATABASE_URL = "https://cctv-monitor-f3e56-default-rtdb.asia-southeast1.firebasedatabase.app"
 TARGET_RESOLUTION = (360, 240)
 POLYGON_SOURCE_RESOLUTION = (960, 540)
